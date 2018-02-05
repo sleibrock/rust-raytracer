@@ -1,10 +1,11 @@
-pub mod objects;
+// add any additional libraries here
+// (ie: src/vector.rs => pub mod vector;)
 
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub mod vector;
+pub mod shading;
+pub mod ppm;
+pub mod geometry;
+
+
+// end
