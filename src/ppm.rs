@@ -4,8 +4,8 @@ use std::io::{Result, Write};
 
 
 pub struct PPM {
-    height: u32,
-    width: u32,
+    height: u64,
+    width: u64,
     data: Vec<u8>,
 }
 
@@ -13,7 +13,7 @@ pub struct PPM {
 impl PPM {
 
 
-    pub fn new(width: u32, height: u32) -> PPM {
+    pub fn new(width: u64, height: u64) -> PPM {
         let size = 3 * height * width;
         let buffer = vec![0; size as usize]; // set entire vec to zero
 
@@ -26,13 +26,13 @@ impl PPM {
 
 
     // the size of the vector buffer allocated to this PPM file
-    pub fn buffer_size(&self) -> u32 {
+    pub fn buffer_size(&self) -> u64 {
        return 3*self.height*self.width;
     }
     
 
     // the offset to use in the vector for allocating data
-    pub fn get_offset(&self, x: u32, y: u32) -> Option<usize> {
+    pub fn get_offset(&self, x: u64, y: u64) -> Option<usize> {
         let offset = (y * self.width * 3) + (x * 3);
         if offset < self.buffer_size() {
             return Some(offset as usize);
@@ -43,7 +43,7 @@ impl PPM {
 
     // allocate a pixel's color in the data vector
     // pattern match by using the internal offset
-    pub fn set_pixel(&mut self, x: u32, y: u32, r: u8, g: u8, b: u8) -> bool {
+    pub fn set_pixel(&mut self, x: u64, y: u64, r: u8, g: u8, b: u8) -> bool {
         match self.get_offset(x, y) {
             Some(offset) => {
                 self.data[offset]     = r;
@@ -62,7 +62,8 @@ impl PPM {
         let header = format!("P6 {} {} 255\n", self.width, self.height);
         try!(file.write(header.as_bytes()));
         try!(file.write(&self.data));
-        Ok(())
+
+        return Ok(());
     }
 }
     

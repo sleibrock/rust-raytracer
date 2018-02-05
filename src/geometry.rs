@@ -4,6 +4,11 @@ use vector::*;
 use shading::*;
 
 
+pub trait Intersectable {
+    fn ray_intersect(&self, r: &Ray) -> Option<f64>;
+}
+
+
 // A ray is a line starting from a position shooting "infinitely"
 // The direction is a Vector in which the ray is traveling [forever]
 pub struct Ray {
@@ -28,6 +33,22 @@ pub struct Sphere {
     pub    pos:       V3,
     pub radius:      f64,
     pub    mat: Material,
+}
+
+impl Intersectable for Sphere {
+    fn ray_intersect(&self, r: &Ray) -> Option<f64> {
+        let a = r.dir * r.dir;
+        let dist = r.pos - self.pos;
+        let b = 2.0 * (r.dir * dist);
+        let c = (dist*dist) - (self.radius * self.radius);
+        let disc = (b*b) - (4.0 * a * c);
+
+        if disc < 0.0 {
+            return None;
+        } else {
+            return Some(1.0);
+        }
+    }
 }
 
 

@@ -6,6 +6,8 @@ pub mod vector;
 pub mod shading;
 pub mod ppm;
 pub mod geometry;
+pub mod camera;
+pub mod scene;
 
 
 // end
