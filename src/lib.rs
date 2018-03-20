@@ -1,13 +1,16 @@
-// add any additional libraries here
-// (ie: src/vector.rs => pub mod vector;)
+// lib.rs
+// add your rust files here
+// ie: camera.rs -> pub mod camera;
 
-
-pub mod vector;
-pub mod shading;
-pub mod ppm;
-pub mod geometry;
+pub mod v3;
+pub mod ray;
 pub mod camera;
-pub mod scene;
+pub mod sphere;
+pub mod element;
+pub mod world;
+pub mod material;
+pub mod intersectable;
+pub mod render;
+pub mod tracer;
 
-
-// end
+// end lib.rs
