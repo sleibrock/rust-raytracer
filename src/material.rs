@@ -57,7 +57,6 @@ pub fn calc_metal(albedo: V3, r: &Ray, hit: Intersection) -> Incident {
     return match hit {
         Intersection::Hit(t, p, nrm, _) => {
             let refl = r.direction.reflect(&nrm);
-
             if refl*nrm > 0.0 {
                 Incident::Scattered(
                     albedo,
