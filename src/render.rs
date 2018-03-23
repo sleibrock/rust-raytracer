@@ -7,7 +7,6 @@ use std::io::Write;
 use self::rand::Rng;
 
 use v3::*;
-use ray::*;
 use element::*;
 use camera::*;
 use world::*;

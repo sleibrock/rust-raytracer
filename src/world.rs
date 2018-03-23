@@ -1,6 +1,5 @@
 // world.rs
 
-use v3::*;
 use ray::*;
 use element::*; 
 use intersectable::*;

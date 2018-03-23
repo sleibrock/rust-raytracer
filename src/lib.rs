@@ -12,5 +12,6 @@ pub mod material;
 pub mod intersectable;
 pub mod render;
 pub mod tracer;
+pub mod utils;
 
 // end lib.rs

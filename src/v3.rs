@@ -82,9 +82,9 @@ impl V3 {
     // calculate the cross product between two vectors
     pub fn cross(&self, o: &V3) -> V3 {
         V3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
+            x: self.y*o.z - self.z*o.y,
+            y: -(self.x*o.z - self.z*o.x),
+            z: self.x*o.y - self.y*o.x,
         }
     }
 
@@ -95,6 +95,7 @@ impl V3 {
         self.copy() - normal.copy()*(2.0*self.dot(normal))
     }
 
+    // sqrt all elements of the vector (used for gamma correction)
     pub fn sqrt(&self) -> V3 {
         V3 { x: self.x.sqrt(), y: self.y.sqrt(), z: self.z.sqrt() }
     }
@@ -186,6 +187,7 @@ impl Div<f64> for V3 {
 }
 
 // other vector-related functions
+// Get a random point inside a Unit Sphere (radius=1)
 pub fn random_in_unit_sphere() -> V3 {
     let mut rng = rand::thread_rng();
     let mut p = 2.0*V3::new(
@@ -196,7 +198,22 @@ pub fn random_in_unit_sphere() -> V3 {
             rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>()
         ) - V3::ones();
     }
-    return p;
+    p
+}
+
+
+// get a random point inside a Unit Disk (radius=1)
+pub fn random_in_unit_disk() -> V3 {
+    let mut rng = rand::thread_rng();
+    let mut p = 2.0*V3::new(
+        rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>()
+    ) - V3::new(1.0, 1.0, 0.0);
+    while p*p >= 1.0 {
+        p = 2.0*V3::new(
+            rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>()
+        ) - V3::new(1.0, 1.0, 0.0);
+    }
+    p
 }
 
 // end v3.rs

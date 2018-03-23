@@ -18,7 +18,7 @@ pub fn trace(r: &Ray, w: &World, limit: u64) -> V3 {
                     Incident::Scattered(atten, scattered) => {
                         return trace(&scattered, w, limit-1).product(&atten);
                     },
-                    Incident::None  => {
+                    _ => {
                         return V3::zeroes();
                     },
                 }
