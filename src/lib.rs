@@ -6,6 +6,7 @@ pub mod v3;
 pub mod ray;
 pub mod camera;
 pub mod sphere;
+pub mod plane;
 pub mod element;
 pub mod world;
 pub mod material;
