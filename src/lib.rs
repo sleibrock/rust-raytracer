@@ -26,26 +26,36 @@ use std::fs::File;
 use std::io::Write;
 use std::f64::consts::PI;
 use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::thread::{spawn, JoinHandle};
+use std::sync::mpsc::{Sender, channel};
+use std::convert::From;
+
 use self::rand::Rng;
+use self::rand::rngs::ThreadRng;
 
 
 /* TYPE DEFINITIONS */
 
-type Pixel   = (u64, u64);
-type RGB     = (u8, u8, u8);
-type RGBA    = (u8, u8, u8, u8);
-type Vector3 = (f64, f64, f64);
+type Pixel      = (u64, u64);
+type RGB        = (u8, u8, u8);
+type RGBA       = (u8, u8, u8, u8);
+type PairF64    = (f64, f64);
+type TripleF64  = (f64, f64, f64);
+pub type Sector = (u64, u64, u64, u64);
+pub type Thread = JoinHandle<()>;
+
 
 /* END TYPE DEFINITIONS */
 
 
 /* CONSTANT DEFINITIONS */
-
+const LOG2 : f64 = 0.6931471805599453;
 /* END CONSTANT DEFINTIONS */
 
 
 /* TRAIT DEFINITIONS */
 
+// TODO: change t_min and t_max to use PairF64 tuple instead
 pub trait RTObject {
     fn intersect(&self, ray: &Ray, t_min: f64, t_max: f64) -> Intersect;
 }
@@ -79,6 +89,30 @@ pub enum Incident {
     Refracted(V3),
     Scattered(V3, Ray),
 }
+
+
+
+// Enumeration used for multithreaded rendering
+pub enum Msg {
+    Draw(Pixel, RGB),
+    End,
+}
+
+
+// This struct will be passed onto rendering threads.
+// Each thread will have access to it's own RNG generator
+// as to avoid having to re-initialize RNG instances every time
+// we want to generate numbers. Which means we want to pass a reference
+// to the ThreadData each time we do some kind of raytracing function
+// to access RNG generation methods.
+//
+// The reference to a ThreadData should always be mutable, because
+// the RNG generator is by itself required to be mutable.
+pub struct ThreadData {
+    pub section: Sector,
+    pub rng:     ThreadRng, 
+}
+
 /* END ENUM DEFINITIONS */
 
 
@@ -93,13 +127,14 @@ pub struct V3 {
 
 // TODO: add time at which ray was fired (raytracing book 2)
 pub struct Ray {
-    pub pos: V3,
-    pub dir: V3,
+    pub pos:   V3,
+    pub dir:   V3,
+    //pub time: f64,
 }
 
 pub struct Sphere {
-    pub center:   V3,
-    pub radius:   f64,
+    pub center:         V3,
+    pub radius:        f64,
     pub material: Material,
 }
 
@@ -117,7 +152,7 @@ pub struct Settings {
     pub depth_limit:   u64,
     pub aa_samples:    u64,
     pub fname:      String,
-    //pub threads: u64,
+    pub threads:       u64,
 }
 
 
@@ -131,6 +166,15 @@ pub struct Camera {
     pub focus_dist: f64,
 }
 
+
+pub struct PPMBuffer {
+    pub width:    usize,
+    pub height:   usize,
+    pub size:     usize,
+    pub buffer: Vec<u8>,
+}
+
+
 /* END STRUCT DEFINITIONS */
 
 
@@ -143,7 +187,8 @@ impl Settings {
             height:      480,
             depth_limit: 50,
             aa_samples:  1,
-            fname:       String::from(f)
+            fname:       String::from(f),
+            threads:     1,
         }
     }
 
@@ -165,15 +210,19 @@ impl Settings {
         }
         self.depth_limit = dl; return self;
     }
+
+    pub fn threads(mut self, t: u64) -> Settings {
+        self.threads = t; return self;
+    }
 }
 
 
 impl Camera {
     pub fn new(pos: V3) -> Camera {
         Camera {
-            pos:  pos,
-            target:    V3::new(1.0, 0.0, 0.0),
-            view_up:   V3::new(0.0, 1.0, 0.0),
+            pos:       pos,
+            target:    V3::i(), // (1, 0, 0)
+            view_up:   V3::j(), // (0, 1, 0)
             vert_fov:  90.0,
             aspect:    1.0,
             aperture:  1.0,
@@ -248,13 +297,12 @@ impl V3 {
         V3 { x: nx, y: ny, z: nz }
     }
 
-
     // core unit vectors
-    pub fn zeroes() -> V3 { V3 { x: 0., y: 0., z: 0. } }
-    pub fn ones()   -> V3 { V3 { x: 1., y: 1., z: 1. } }
-    pub fn i()      -> V3 { V3 { x: 1., y: 0., z: 0. } }
-    pub fn j()      -> V3 { V3 { x: 0., y: 1., z: 0. } }
-    pub fn k()      -> V3 { V3 { x: 0., y: 0., z: 1. } }
+    pub fn zeroes() -> V3 { (0., 0., 0.).into() }
+    pub fn ones()   -> V3 { (1., 1., 1.).into() }
+    pub fn i()      -> V3 { (1., 0., 0.).into() }
+    pub fn j()      -> V3 { (0., 1., 0.).into() }
+    pub fn k()      -> V3 { (0., 0., 1.).into() }
 
     
     // multiply the current vector by another vector
@@ -265,16 +313,13 @@ impl V3 {
     
     // multiply the current vector by a scalar
     pub fn scale(&self, s: f64) -> V3 {
-        V3 { x: self.x*s, y: self.y*s, z: self.z*s }
+        (*self) * s
     }
 
 
     // divide the current vector by a divisor
     pub fn div(&self, d: f64) -> V3 {
-        if d == 0.0 {
-            panic!("Division by zero!");
-        }
-        V3 { x: self.x/d, y: self.y/d, z: self.z/d }
+        (*self) / d
     }
 
 
@@ -294,7 +339,7 @@ impl V3 {
         if l == 0.0 {
             return V3::zeroes();
         }
-        V3 { x: self.x/l, y: self.y/l, z: self.z/l }
+        return (*self) / l;
     }
 
 
@@ -412,13 +457,22 @@ impl Div<f64> for V3 {
     }
 }
 
+impl From<V3> for TripleF64 {
+    fn from(xyz: V3) -> Self {
+        (xyz.x, xyz.y, xyz.z)
+    }
+}
+
+impl From<TripleF64> for V3 {
+    fn from((x, y, z): TripleF64) -> Self {
+        V3::new(x, y, z)
+    }
+}
+
 
 impl Ray {
-    pub fn new((x1, y1, z1): Vector3, (x2, y2, z2): Vector3) -> Ray {
-        Ray {
-            pos: V3::new(x1, y1, z1),
-            dir: V3::new(x2, y2, z2)
-        }
+    pub fn new(npos: TripleF64, ndir: TripleF64) -> Ray {
+        Ray { pos: V3::from(npos), dir: V3::from(ndir), }
     }
 
     // Origin + (Dir*t)
@@ -431,8 +485,8 @@ impl Ray {
 
 
 impl Sphere {
-    pub fn new(x: f64, y: f64, z: f64, r: f64, m: Material) -> Sphere {
-        Sphere{ center: V3::new(x, y, z), radius: r, material: m }
+    pub fn new(xyz: TripleF64, r: f64, m: Material) -> Sphere {
+        Sphere{ center: V3::from(xyz), radius: r, material: m }
     }
 }
 
@@ -472,6 +526,7 @@ impl RTObject for Sphere {
 
 
 
+// TODO: work on BVH
 impl Scene {
     pub fn new() -> Scene {
         let v : Vec<Box<RTObject>> = Vec::new();
@@ -483,8 +538,7 @@ impl Scene {
     }
 }
 
-
-
+// TODO: BVH
 impl RTObject for Scene {
     fn intersect(&self, r: &Ray, t_min: f64, t_max: f64) -> Intersect {
         let mut closest = t_max;
@@ -506,7 +560,9 @@ impl RTObject for Scene {
     }
 }
 
+
 // implement a PPM renderer for the World object
+// TODO: switch to PPMBuffer rendering method with threading/mpsc
 impl PPMRender for Scene {
     fn to_ppm(&self, c: &Camera, set: &Settings) -> Result<u8, String> { 
         let mut f = match File::create(set.fname.as_str()) {
@@ -514,8 +570,7 @@ impl PPMRender for Scene {
             _ => panic!("Failed to open the file"),
         };
 
-        match f.write(format!("P3\n{} {}\n255\n",
-                              set.width, set.height).as_bytes()) {
+        match f.write(format!("P3\n{} {}\n255\n", set.width, set.height).as_bytes()) {
             Ok(_) => {},
             _ => panic!("Failed to write header"),
         }
@@ -562,6 +617,17 @@ impl PPMRender for Scene {
 }
 
 
+impl Material {
+    pub fn scatter(&self, r: &Ray, hit: Intersect) -> Incident {
+        match *self {
+            Material::Lambert(lv)     => calc_lambert(lv, r, hit),
+            Material::Metal(mv, fuzz) => calc_metal(mv, fuzz, r, hit),
+            Material::Glass(gv)       => calc_glass(gv, r, hit),
+        }
+    }  
+}
+
+
 /* END IMPLEMENTATIONS */
 
 
@@ -581,6 +647,16 @@ pub fn to_rad(x: f64) -> f64 { 0. }
 pub fn random() -> f64 {
     let mut rng = rand::thread_rng();
     return rng.gen::<f64>();
+}
+
+pub fn rand_pair() -> PairF64 {
+    let mut rng = rand::thread_rng();
+    (rng.gen::<f64>(), rng.gen::<f64>())
+}
+
+pub fn rand_triple() -> TripleF64 {
+    let mut rng = rand::thread_rng();
+    (rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>())
 }
 
 pub fn rand_vec() -> V3 {
@@ -625,18 +701,6 @@ pub fn schlick(cosine: f64, ref_idx: f64) -> f64 {
     let r0 = (1.0 - ref_idx) / (1.0 + ref_idx);
     let r1 = r0*r0;
     r1 + (1.0 - r1) * (1.0 - cosine).powi(5)
-}
-
-
-
-impl Material {
-    pub fn scatter(&self, r: &Ray, hit: Intersect) -> Incident {
-        match *self {
-            Material::Lambert(lv)     => calc_lambert(lv, r, hit),
-            Material::Metal(mv, fuzz) => calc_metal(mv, fuzz, r, hit),
-            Material::Glass(gv)       => calc_glass(gv, r, hit),
-        }
-    }  
 }
 
 
@@ -726,9 +790,9 @@ pub fn calc_glass(refrac: f64, r: &Ray, hit: Intersect) -> Incident {
 
 
 
-// short hand initializers for all objects/assets
-pub fn new_sphere((x, y, z): Vector3, r: f64, m: Material) -> Box<Sphere> {
-    Box::new(Sphere::new(x, y, z, r, m))
+// short hand initializers for all boxed objects/assets
+pub fn new_sphere(xyz: TripleF64, r: f64, m: Material) -> Box<Sphere> {
+    Box::new(Sphere::new(xyz, r, m))
 }
 
 
@@ -748,8 +812,10 @@ pub fn glass(ref_idx: f64) -> Material {
 }
 
 
-
-
+// count how many threads we will need with N subdivisions of the screen space
+fn thread_count(div: u64) -> u64 {
+    (4 as i64).pow((div as u32)-1) as u64
+}
 
 
 
