@@ -1,68 +1,42 @@
-// lib.rs
-// add your rust files here
-// ie: camera.rs -> pub mod camera;
+// src/lib.rs
 
-/*
-pub mod v3;
-pub mod ray;
-pub mod camera;
-pub mod sphere;
-pub mod plane;
-pub mod element;
-pub mod world;
-pub mod material;
-pub mod intersectable;
-pub mod render;
-pub mod tracer;
-pub mod utils;
+
+
+
+// external libraries
+pub mod aliases;
 pub mod math;
-pub mod geo;
- */
-
+pub mod ppm;
 
 extern crate rand;
 
 use std::fs::File;
 use std::io::Write;
-use std::f64::consts::PI;
-use std::ops::{Add, Sub, Mul, Div, Neg};
-use std::thread::{spawn, JoinHandle};
+use std::thread::{spawn};
 use std::sync::mpsc::{Sender, channel};
-use std::convert::From;
 
 use self::rand::Rng;
 use self::rand::rngs::ThreadRng;
 
 
-/* TYPE DEFINITIONS */
+pub use math::*;
+pub use aliases::*;
+pub use ppm::*;
 
-type Pixel      = (u64, u64);
-type RGB        = (u8, u8, u8);
-type RGBA       = (u8, u8, u8, u8);
-type PairF64    = (f64, f64);
-type TripleF64  = (f64, f64, f64);
-pub type Sector = (u64, u64, u64, u64);
-pub type Thread = JoinHandle<()>;
-
-
-/* END TYPE DEFINITIONS */
-
-
-/* CONSTANT DEFINITIONS */
-const LOG2 : f64 = 0.6931471805599453;
-/* END CONSTANT DEFINTIONS */
 
 
 /* TRAIT DEFINITIONS */
 
 // TODO: change t_min and t_max to use PairF64 tuple instead
 pub trait RTObject {
-    fn intersect(&self, ray: &Ray, t_min: f64, t_max: f64) -> Intersect;
+    fn intersect(&self, &Ray, f64, f64) -> Intersect;
+    //fn intersect(&self, &Ray, PairF64) -> Intersect;
 }
 
 // rendering trait
 pub trait PPMRender {
-    fn to_ppm(&self, c: &Camera, set: &Settings) -> Result<u8, String>;
+    fn to_ppm(&self, &Camera, &Settings) -> Result<u8, String>;
+    //fn to_ppm(&self, &Camera, &Settings) -> Result<(), String>;
 }
 
 
@@ -91,7 +65,6 @@ pub enum Incident {
 }
 
 
-
 // Enumeration used for multithreaded rendering
 pub enum Msg {
     Draw(Pixel, RGB),
@@ -118,12 +91,6 @@ pub struct ThreadData {
 
 
 /* STRUCT DEFINITIONS */
-#[derive(Clone, Copy, Debug)]
-pub struct V3 {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-}
 
 // TODO: add time at which ray was fired (raytracing book 2)
 pub struct Ray {
@@ -167,12 +134,6 @@ pub struct Camera {
 }
 
 
-pub struct PPMBuffer {
-    pub width:    usize,
-    pub height:   usize,
-    pub size:     usize,
-    pub buffer: Vec<u8>,
-}
 
 
 /* END STRUCT DEFINITIONS */
@@ -183,12 +144,12 @@ pub struct PPMBuffer {
 impl Settings {
     pub fn new(f: &str) -> Settings {
         Settings{
-            width:       640,
-            height:      480,
-            depth_limit: 50,
-            aa_samples:  1,
+            width:       DEFAULT_WIDTH,
+            height:      DEFAULT_HEIGHT,
+            depth_limit: DEFAULT_DEPTH_LIMIT,
+            aa_samples:  DEFAULT_AA_SAMPLES,
             fname:       String::from(f),
-            threads:     1,
+            threads:     DEFAULT_THREADS,
         }
     }
 
@@ -223,9 +184,9 @@ impl Camera {
             pos:       pos,
             target:    V3::i(), // (1, 0, 0)
             view_up:   V3::j(), // (0, 1, 0)
-            vert_fov:  90.0,
-            aspect:    1.0,
-            aperture:  1.0,
+            vert_fov:  DEFAULT_FOV,
+            aspect:    DEFAULT_ASPECT_RAT,
+            aperture:  DEFAULT_APERTURE,
             focus_dist: 1.0,
         }
     }
@@ -287,187 +248,8 @@ impl Camera {
 
 
 
-/// Vector class of 3 dimensions
-/// Can also be used to store colors (x=r, y=g, z=b)
-/// Arithmetic supported: Addition, Subtraction, Multiplication, Division
-/// Supports: dot product, cross product, negation
-/// Included: core unit vectors (i/j/k), ones and zeroes
-impl V3 {
-    pub fn new(nx: f64, ny: f64, nz: f64) -> V3 {
-        V3 { x: nx, y: ny, z: nz }
-    }
-
-    // core unit vectors
-    pub fn zeroes() -> V3 { (0., 0., 0.).into() }
-    pub fn ones()   -> V3 { (1., 1., 1.).into() }
-    pub fn i()      -> V3 { (1., 0., 0.).into() }
-    pub fn j()      -> V3 { (0., 1., 0.).into() }
-    pub fn k()      -> V3 { (0., 0., 1.).into() }
-
-    
-    // multiply the current vector by another vector
-    pub fn product(&self, v: &V3) -> V3 {
-        V3 { x: self.x*v.x, y: self.y*v.y, z: self.z*v.z }
-    }
-
-    
-    // multiply the current vector by a scalar
-    pub fn scale(&self, s: f64) -> V3 {
-        (*self) * s
-    }
 
 
-    // divide the current vector by a divisor
-    pub fn div(&self, d: f64) -> V3 {
-        (*self) / d
-    }
-
-
-    // length functions
-    pub fn length2(&self) -> f64 {
-        self.x*self.x + self.y*self.y + self.z*self.z
-    }
-
-    pub fn length(&self) -> f64 {
-        self.length2().sqrt()
-    }
-
-
-    // calculate the normalized component of a vector
-    pub fn normal(&self) -> V3 {
-        let l = self.length();
-        if l == 0.0 {
-            return V3::zeroes();
-        }
-        return (*self) / l;
-    }
-
-
-    // this calculates the dot product between *self and &V3
-    // It is better to use Vec*Vec for dot products to avoid ref passing
-    pub fn dot(&self, o: &V3) -> f64 {
-        self.x*o.x + self.y*o.y + self.z*o.z
-    }
-
-
-    // calculate the cross product between two vectors
-    pub fn cross(&self, o: &V3) -> V3 {
-        V3 {
-            x: self.y*o.z - self.z*o.y,
-            y: -(self.x*o.z - self.z*o.x),
-            z: self.x*o.y - self.y*o.x,
-        }
-    }
-
-
-    // Reflect a vector against a normal
-    // v - 2*dot(v,n)*n
-    pub fn reflect(&self, normal: &V3) -> V3 {
-        self.copy() - normal.copy()*(2.0*self.dot(normal))
-    }
-
-    // sqrt all elements of the vector (used for gamma correction)
-    pub fn sqrt(&self) -> V3 {
-        V3 { x: self.x.sqrt(), y: self.y.sqrt(), z: self.z.sqrt() }
-    }
-
-
-    // used to full-copy a vector
-    pub fn copy(&self) -> V3 {
-        V3 { x: self.x, y: self.y, z: self.z }
-    }
-
-
-    // debug
-    pub fn print(&self) {
-        println!("vec: {} {} {}", self.x, self.y, self.z);
-    }
-}
-
-
-// trait impls for math overriding
-impl Add for V3 {
-    type Output = V3;
-    fn add(self, o: V3) -> V3 {
-        V3 { x: self.x+o.x, y: self.y+o.y, z: self.z+o.z }
-    }
-}
-
-
-impl Sub for V3 {
-    type Output = V3;
-    fn sub(self, o: V3) -> V3 {
-        V3 { x: self.x-o.x, y: self.y-o.y, z: self.z-o.z }
-    }
-}
-
-
-// a Vector * Vector should be considered a dot product
-impl Mul for V3 {
-    type Output = f64;
-    fn mul(self, o: V3) -> f64 {
-        self.x*o.x + self.y*o.y + self.z*o.z
-    }
-}
-
-
-impl Neg for V3 {
-    type Output = V3;
-    fn neg(self) -> V3 {
-        V3 { x: -self.x, y: -self.y, z: -self.z }
-    }
-}
-
-
-impl Mul<f64> for V3 {
-    type Output = V3;
-    fn mul(self, scalar: f64) -> V3 {
-        V3 {
-            x: self.x * scalar,
-            y: self.y * scalar,
-            z: self.z * scalar,
-        }
-    }
-}
-
-
-impl Mul<V3> for f64 {
-    type Output = V3;
-    fn mul(self, vector: V3) -> V3 {
-        V3 {
-            x: vector.x * self,
-            y: vector.y * self,
-            z: vector.z * self,
-        }
-    }
-}
-
-
-impl Div<f64> for V3 {
-    type Output = V3;
-    fn div(self, divisor: f64) -> V3 {
-        if divisor == 0.0 {
-            panic!("Division by zero!");
-        }
-        V3 {
-            x: self.x / divisor,
-            y: self.y / divisor,
-            z: self.z / divisor,
-        }
-    }
-}
-
-impl From<V3> for TripleF64 {
-    fn from(xyz: V3) -> Self {
-        (xyz.x, xyz.y, xyz.z)
-    }
-}
-
-impl From<TripleF64> for V3 {
-    fn from((x, y, z): TripleF64) -> Self {
-        V3::new(x, y, z)
-    }
-}
 
 
 impl Ray {
@@ -523,6 +305,10 @@ impl RTObject for Sphere {
         return Intersect::None;
     }
 }
+
+
+
+
 
 
 
@@ -631,17 +417,32 @@ impl Material {
 /* END IMPLEMENTATIONS */
 
 
+// start doing the actual raytracing stuff here
+
+fn draw_thread(tx: &Sender<Msg>, td: ThreadData) -> Thread {
+    let sender = Sender::clone(tx);
+    let(x_min, y_min, x_max, y_max) = td.section;
+
+    return spawn(move ||{
+        for x in x_min .. x_max {
+            for y in y_min .. y_max {
+                let p = get_pixel((x,y));
+            }
+        }
+        sender.send(Msg::End).unwrap();
+    });
+}
+
+fn get_pixel(xy: Pixel) -> RGB {
+    (0,0,0)
+}
+
+
+
+
+
 
 /* FUNCTIONS */
-
-// MATH STUFF
-
-pub fn sin(x: f64) -> f64 { x.sin() }
-pub fn cos(x: f64) -> f64 { x.cos() }
-pub fn tan(x: f64) -> f64 { x.tan() }
-pub fn to_deg(x: f64) -> f64 { 0. }
-pub fn to_rad(x: f64) -> f64 { 0. }
-
 
 
 pub fn random() -> f64 {
@@ -661,7 +462,7 @@ pub fn rand_triple() -> TripleF64 {
 
 pub fn rand_vec() -> V3 {
     let mut rng = rand::thread_rng();
-    return V3::new(rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>());
+    (rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>()).into()
 }
 
 // other vector-related functions
@@ -705,7 +506,7 @@ pub fn schlick(cosine: f64, ref_idx: f64) -> f64 {
 
 
 
-// define interactions here
+// Define all material interactions below
 pub fn calc_lambert(albedo: V3, r: &Ray, hit: Intersect) -> Incident {
     match hit {
         Intersect::Hit(t, p, nrm, _) => {
@@ -800,8 +601,8 @@ pub fn lambert(x: f64, y: f64, z: f64) -> Material {
     Material::Lambert(V3::new(x, y, z))
 }
 
-pub fn metal(x: f64, y: f64, z: f64, fuzz: f64) -> Material {
-    Material::Metal(V3::new(x, y, z), match fuzz < 1.0 {
+pub fn metal(xyz: TripleF64, fuzz: f64) -> Material {
+    Material::Metal(xyz.into(), match fuzz < 1.0 {
         true => fuzz,
         _    => 1.0,
     })
@@ -817,6 +618,27 @@ fn thread_count(div: u64) -> u64 {
     (4 as i64).pow((div as u32)-1) as u64
 }
 
+
+
+/// Subdivide a Sector (x1, y1, x2, y2) into a number of subdivided regions.
+/// `div` is the total number of subdivisions made.
+fn subdivide(div: u64, sect: Sector) -> Vec<Sector> {
+    let (x1, y1, x2, y2) = sect;
+    let mut buf : Vec<Sector> = Vec::new();
+    let width  = x2 - x1;
+    let height = y2 - y1;
+    let srw    = width / div;
+    let srh    = height / div;
+    for x in 0 .. div {
+        for y in 0 .. div {
+            buf.push((x*srw, y*srh, (x+1)*srw, (y+1)*srh));
+        }
+    }
+    return buf;
+}
+
+
+// create a new rendering thread by passing a Sender and a ThreadData struct
 
 
 

@@ -18,7 +18,6 @@ fn main() {
     let cam_pos = V3::new(5.5, 3.0, 1.0);
     let look_at = V3::new(0.0, 2.0, 0.0);
     
-    // create a new camera with some information
     let camera = Camera::new(cam_pos) // init position
         .target(look_at)              // the target
         .fov(75.0)                    // (vertical) field of view
@@ -55,7 +54,7 @@ fn main() {
         
         w.add_object(new_sphere((sx, 1.0+sy, sz), 1.0, match (i%2)==0 {
             true => lambert(red[i], green[i], blue[i]),
-            _    => metal(red[i], green[i], blue[i], 1.0),
+            _    => metal((red[i], green[i], blue[i]), 1.0),
         }));
     }
 
